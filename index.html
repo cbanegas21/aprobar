@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Aprobar</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--ink:#1c1b19;--mut:#6b6862;--line:#dedbd4;--ok:#1f7a4d;--no:#a33a2b;--warn:#9a6a00;--acc:#2b4c7e;--pre:#f1efea}
+@media (prefers-color-scheme:dark){:root{--bg:#161614;--card:#201f1c;--ink:#ecebe6;--mut:#a09d96;--line:#35332e;--ok:#5cc08d;--no:#e2806f;--warn:#e0b04a;--acc:#8fb1e6;--pre:#191816}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 16px 0;z-index:5}
+.top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.top b{font-size:17px}.top span{color:var(--mut);font-size:13px}
+nav{display:flex;gap:4px;margin-top:8px;overflow-x:auto}
+nav button{border:0;background:none;color:var(--mut);padding:8px 12px;font:inherit;border-bottom:3px solid transparent;white-space:nowrap;cursor:pointer}
+nav button.on{color:var(--ink);border-color:var(--acc);font-weight:600}
+nav i{font-style:normal;background:var(--acc);color:var(--bg);border-radius:10px;padding:0 7px;font-size:12px;margin-left:6px}
+main{max-width:860px;margin:0 auto;padding:14px 16px 90px}
+h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:22px 0 8px}
+h2.urg{color:var(--no)}
+.c{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+.c.urg{border-color:var(--no)}
+.c h3{margin:0 0 8px;font-size:16px}
+dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:0 0 10px;font-size:14px}
+dt{color:var(--mut)}dd{margin:0;overflow-wrap:anywhere}
+pre{background:var(--pre);border:1px solid var(--line);border-radius:8px;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere;font:15px/1.5 ui-monospace,Consolas,monospace;margin:0 0 10px}
+details{font-size:14px;margin-bottom:10px}summary{cursor:pointer;color:var(--acc)}
+table{border-collapse:collapse;width:100%;margin-top:6px}td{border-top:1px solid var(--line);padding:5px 6px;vertical-align:top;font-size:13px;overflow-wrap:anywhere}
+.b{display:flex;gap:8px;flex-wrap:wrap}
+.b button,.all{font:inherit;font-weight:600;border-radius:8px;padding:10px 16px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;min-height:44px}
+.b .ok,.all{background:var(--ok);border-color:var(--ok);color:#fff}
+.b .no{color:var(--no)}
+button:disabled{opacity:.5;cursor:default}
+textarea,input{width:100%;font:inherit;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);margin:8px 0}
+.st{font-size:14px;font-weight:600;margin-top:4px}.st.ok{color:var(--ok)}.st.no{color:var(--no)}.st.w{color:var(--warn)}
+.vacio{color:var(--mut);padding:30px 0;text-align:center}
+.err{background:var(--no);color:#fff;padding:10px 16px;font-size:14px;display:none}
+.say{margin-top:26px;border-top:1px solid var(--line);padding-top:14px}
+.all{margin:4px 0}
+</style>
+</head>
+<body>
+<div class="err" id="err"></div>
+<header><div class="top"><b>Aprobar</b><span id="hora"></span></div><nav id="nav"></nav></header>
+<main id="main"><div class="vacio">Cargando…</div></main>
+<script>
+"use strict";
+const $ = s => document.querySelector(s), LS = localStorage, DEMO = location.search.includes("demo");
+let K = LS.getItem("aprobar_k") || "", R = LS.getItem("aprobar_r") || "";
+let tabs = [], cur = LS.getItem("aprobar_tab") || "", data = {}, etag = {}, local = {};
+
+(function () {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get("k")) { K = h.get("k"); LS.setItem("aprobar_k", K); }
+  if (h.get("r")) { R = h.get("r"); LS.setItem("aprobar_r", R); }
+  if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+})();
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const b64 = s => btoa(unescape(encodeURIComponent(s)));
+const hhmm = d => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+function err(t) { const e = $("#err"); e.textContent = t || ""; e.style.display = t ? "block" : "none"; }
+
+async function gh(path, opt = {}) {
+  return fetch("https://api.github.com/repos/" + R + "/contents/" + path, {
+    cache: "no-store", ...opt,
+    headers: { Authorization: "Bearer " + K, Accept: "application/vnd.github.raw+json", "X-GitHub-Api-Version": "2022-11-28", ...(opt.headers || {}) }
+  });
+}
+async function leer(path) {
+  const r = await gh(path, { headers: etag[path] ? { "If-None-Match": etag[path] } : {} });
+  if (r.status === 304) return null;
+  if (r.status === 404) return { vacio: true };
+  if (r.status === 401 || r.status === 403) throw new Error("La llave no sirve o venció (GitHub " + r.status + ")");
+  if (!r.ok) throw new Error("GitHub " + r.status + " al leer");
+  etag[path] = r.headers.get("ETag") || "";
+  return await r.json();
+}
+async function escribir(path, obj) {
+  if (DEMO) { await new Promise(r => setTimeout(r, 300)); return; }
+  const r = await gh(path, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Accept: "application/vnd.github+json" },
+    body: JSON.stringify({ message: "clic " + obj.decision + " " + (obj.id || ""), content: b64(JSON.stringify(obj, null, 1)) })
+  });
+  if (!r.ok) throw new Error("GitHub " + r.status + " al guardar el clic");
+}
+
+const DEMO_DATA = {
+  techcow: { tarjetas: [
+    { id: "d1", v: 1, para: "Persona A", titulo: "Nota de ejemplo", donde: "monday · item de ejemplo · nota nueva", ticket: "Item de ejemplo", por_que: "Pidió el cambio el lunes", cuando: "Hoy 2:00 PM", texto: "Hi A, the card now shows the total by month.\nThe link is in the item.", pruebas: [["the card now shows the total by month", "Leído en vivo 11:02 AM: 12 de 12 meses"]], urgente: true, estado: "esperando" },
+    { id: "d2", v: 1, para: "Persona A", titulo: "Slack de ejemplo", donde: "Slack · canal de ejemplo · hilo", ticket: "Item de ejemplo", por_que: "Cierre del mismo ticket", cuando: "Hoy 2:10 PM", texto: "All done on this one.", pruebas: [], estado: "esperando" },
+    { id: "d3", v: 2, para: "Persona B", titulo: "Correo de ejemplo", donde: "Outlook · responder a todos", ticket: "Otro item", por_que: "Preguntó ayer", cuando: "Mañana 9:00 AM", texto: "Hi B,\n\nThe report is attached.\n\nThanks,", pruebas: [], estado: "enviado", nota_estado: "Enviado 10:41 AM y leído de vuelta" }
+  ] },
+  cafortune: { tarjetas: [] }, clienttether: { tarjetas: [] }
+};
+
+async function cargar(primera) {
+  try {
+    if (DEMO) { tabs = ["techcow", "cafortune", "clienttether"]; data = DEMO_DATA; }
+    else {
+      if (primera || !tabs.length) { const c = await leer("config.json"); if (c && !c.vacio) tabs = c.pestanas || []; }
+      await Promise.all(tabs.map(async t => { const d = await leer("tarjetas/" + t + ".json"); if (d) data[t] = d.vacio ? { tarjetas: [] } : d; }));
+    }
+    if (!tabs.includes(cur)) cur = tabs[0] || "";
+    err(""); pintar(); $("#hora").textContent = "visto " + hhmm(new Date());
+  } catch (e) { err(e.message + ". Reintento en 20 s."); }
+}
+
+const lista = t => ((data[t] || {}).tarjetas || []);
+const clave = (t, c) => t + "/" + c.id + "/" + c.v;
+const estado = (t, c) => { const l = local[clave(t, c)]; return l ? l.e : (c.estado || "esperando"); };
+const esperan = t => lista(t).filter(c => estado(t, c) === "esperando");
+
+function pintar() {
+  $("#nav").innerHTML = tabs.map(t => `<button class="${t === cur ? "on" : ""}" data-t="${esc(t)}">${esc(t)}${esperan(t).length ? `<i>${esperan(t).length}</i>` : ""}</button>`).join("");
+  const a = document.activeElement;
+  if (a && (a.tagName === "TEXTAREA" || a.tagName === "INPUT")) return;   // no borrar lo que está escribiendo
+  const guardado = [...document.querySelectorAll("textarea[data-id]")].filter(x => x.value).map(x => [x.dataset.id, x.value]);
+  const cs = lista(cur);
+  if (!cs.length) { $("#main").innerHTML = `<div class="vacio">Nada espera en ${esc(cur)}.</div>` + decir(); return; }
+  const urg = cs.filter(c => c.urgente && estado(cur, c) === "esperando"), grupos = {};
+  cs.filter(c => !urg.includes(c)).forEach(c => { const g = c.para || "Sin destinatario"; (grupos[g] = grupos[g] || []).push(c); });
+  let h = ""; const n = esperan(cur).length;
+  if (n > 1) h += `<button class="all" id="todo">Aprobar los ${n} de ${esc(cur)}</button>`;
+  if (urg.length) h += `<h2 class="urg">Urgente</h2>` + urg.map(tarjeta).join("");
+  for (const g in grupos) h += `<h2>${esc(g)}</h2>` + grupos[g].map(tarjeta).join("");
+  $("#main").innerHTML = h + decir();
+  guardado.forEach(([id, v]) => { const x = document.querySelector(`textarea[data-id="${CSS.escape(id)}"]`); if (x) { x.value = v; x.closest(".cam").hidden = false; } });
+}
+
+function tarjeta(c) {
+  const e = estado(cur, c), l = local[clave(cur, c)], id = esc(c.id);
+  const pr = (c.pruebas || []).length ? `<details><summary>Ver pruebas (${c.pruebas.length})</summary><table>${c.pruebas.map(p => `<tr><td>${esc(p[0])}</td><td>${esc(p[1])}</td></tr>`).join("")}</table></details>` : "";
+  let pie;
+  if (e === "esperando") pie = `<div class="b"><button class="ok" data-a="aprobar" data-id="${id}">Aprobar</button><button data-a="cam" data-id="${id}">Cambiar</button><button class="no" data-a="tirar" data-id="${id}">Tirar</button></div><div class="cam" hidden><textarea rows="3" data-id="${id}" placeholder="Qué hay que cambiar"></textarea><div class="b"><button data-a="cambiar" data-id="${id}">Mandar el cambio</button></div></div>`;
+  else if (e === "guardando") pie = `<div class="st w">Guardando tu clic…</div>`;
+  else if (e === "fallo") pie = `<div class="st no">No se guardó: ${esc(l.m)}</div><div class="b"><button data-a="reintentar" data-id="${id}">Reintentar</button></div>`;
+  else if (l) pie = `<div class="st ok">${({ aprobar: "Aprobado", cambiar: "Cambio pedido", tirar: "Tirado" })[l.d]} ${esc(l.h)}. La terminal lo toma.</div>`;
+  else pie = `<div class="st ${e === "tirado" ? "no" : "ok"}">${esc(c.nota_estado || e)}</div>`;
+  return `<div class="c ${c.urgente && e === "esperando" ? "urg" : ""}"><h3>${esc(c.titulo)}</h3><dl><dt>Dónde</dt><dd>${esc(c.donde)}</dd><dt>Ticket</dt><dd>${esc(c.ticket)}</dd><dt>Por qué</dt><dd>${esc(c.por_que)}</dd><dt>Cuándo</dt><dd>${esc(c.cuando)}</dd></dl><pre>${esc(c.texto)}</pre>${pr}${pie}</div>`;
+}
+const decir = () => `<div class="say"><h2>Decirle algo a la terminal de ${esc(cur)}</h2><textarea rows="2" id="msg" placeholder="Lo que escribas aquí le llega a la terminal"></textarea><div class="b"><button id="enviarmsg">Mandar</button></div><div class="st ok" id="msgok"></div></div>`;
+
+async function clic(t, id, d, com) {
+  const c = lista(t).find(x => x.id === id); if (!c) return;
+  const k = clave(t, c), ahora = new Date();
+  const obj = { id: c.id, v: c.v, decision: d, comentario: com || "", hora: ahora.toISOString(), pestana: t };
+  local[k] = { e: "guardando", d, obj }; pintar();
+  try { await escribir(`decisiones/${t}/${c.id}.v${c.v}.${ahora.getTime()}.json`, obj); local[k] = { e: "hecho", d, h: hhmm(ahora) }; }
+  catch (e) { local[k] = { e: "fallo", d, m: e.message, obj }; }
+  pintar();
+}
+
+document.addEventListener("click", async ev => {
+  const b = ev.target.closest("button"); if (!b) return;
+  if (b.dataset.t) { cur = b.dataset.t; LS.setItem("aprobar_tab", cur); if (document.activeElement) document.activeElement.blur(); pintar(); return; }
+  const id = b.dataset.id, a = b.dataset.a, t = cur;
+  if (a === "aprobar" || a === "tirar") return clic(t, id, a);
+  if (a === "cam") { const x = b.closest(".c").querySelector(".cam"); x.hidden = !x.hidden; if (!x.hidden) x.querySelector("textarea").focus(); return; }
+  if (a === "cambiar") { const x = b.closest(".c").querySelector("textarea"); if (!x.value.trim()) { x.focus(); return; } const v = x.value; x.value = ""; x.blur(); return clic(t, id, "cambiar", v); }
+  if (a === "reintentar") { const c = lista(t).find(x => x.id === id), l = local[clave(t, c)]; delete local[clave(t, c)]; return clic(t, id, l.d, l.obj.comentario); }
+  if (b.id === "todo") { b.disabled = true; for (const c of esperan(t)) await clic(t, c.id, "aprobar"); return; }
+  if (b.id === "enviarmsg") {
+    const x = $("#msg"); if (!x.value.trim()) return; b.disabled = true; const ahora = new Date();
+    try { await escribir(`decisiones/${t}/_mensaje.${ahora.getTime()}.json`, { decision: "mensaje", comentario: x.value, hora: ahora.toISOString(), pestana: t }); x.value = ""; x.blur(); pintar(); $("#msgok").textContent = "Mandado " + hhmm(ahora) + ". La terminal lo toma."; }
+    catch (e) { err(e.message); b.disabled = false; }
+  }
+  if (b.id === "guardar") { LS.setItem("aprobar_k", $("#k").value.trim()); LS.setItem("aprobar_r", $("#r").value.trim()); location.reload(); }
+});
+
+if (!DEMO && (!K || !R)) {
+  $("#main").innerHTML = `<div class="c"><h3>Falta la llave</h3><p>Abre el enlace completo que te dio Claude. O pega aquí la llave y el repositorio.</p><input id="k" placeholder="Llave"><input id="r" placeholder="usuario/repositorio"><div class="b"><button class="ok" id="guardar">Guardar</button></div></div>`;
+} else {
+  cargar(true);
+  setInterval(() => { if (!document.hidden) cargar(false); }, 20000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) cargar(false); });
+}
+</script>
+</body>
+</html>
