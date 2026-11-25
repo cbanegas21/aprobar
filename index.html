@@ -39,6 +39,8 @@ textarea,input{width:100%;font:inherit;padding:10px;border-radius:8px;border:1px
 .err{background:var(--no);color:#fff;padding:10px 16px;font-size:14px;display:none}
 .say{margin-top:26px;border-top:1px solid var(--line);padding-top:14px}
 .all{margin:4px 0}
+.c.k{padding:10px 14px}.kt{display:flex;flex-direction:column;gap:2px;margin-bottom:4px}.kt span{color:var(--mut);font-size:13px}.c.k details{margin:6px 0 0}.c.k pre{margin-top:8px}
+details.fin{margin-top:22px}details.fin>summary{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin-bottom:8px}
 </style>
 </head>
 <body>
@@ -121,12 +123,19 @@ function pintar() {
   const guardado = [...document.querySelectorAll("textarea[data-id]")].filter(x => x.value).map(x => [x.dataset.id, x.value]);
   const cs = lista(cur);
   if (!cs.length) { $("#main").innerHTML = `<div class="vacio">Nada espera en ${esc(cur)}.</div>` + decir(); return; }
-  const urg = cs.filter(c => c.urgente && estado(cur, c) === "esperando"), grupos = {};
-  cs.filter(c => !urg.includes(c)).forEach(c => { const g = c.para || "Sin destinatario"; (grupos[g] = grupos[g] || []).push(c); });
-  let h = ""; const n = esperan(cur).length;
-  if (n > 1) h += `<button class="all" id="todo">Aprobar los ${n} de ${esc(cur)}</button>`;
+  // Primero lo que espera su clic; abajo lo que ya decidio; al final, plegado, lo enviado.
+  const esp = cs.filter(c => estado(cur, c) === "esperando");
+  const fin = cs.filter(c => !local[clave(cur, c)] && ["enviado", "tirado"].includes(c.estado));
+  const med = cs.filter(c => !esp.includes(c) && !fin.includes(c));
+  const urg = esp.filter(c => c.urgente), grupos = {};
+  esp.filter(c => !c.urgente).forEach(c => { const g = c.para || "Sin destinatario"; (grupos[g] = grupos[g] || []).push(c); });
+  let h = `<h2 class="${esp.length ? "urg" : ""}">Esperan tu clic (${esp.length})</h2>`;
+  if (!esp.length) h += `<div class="vacio" style="padding:8px 0 4px">Nada espera tu clic en ${esc(cur)}.</div>`;
+  if (esp.length > 1) h += `<button class="all" id="todo">Aprobar los ${esp.length} de ${esc(cur)}</button>`;
   if (urg.length) h += `<h2 class="urg">Urgente</h2>` + urg.map(tarjeta).join("");
   for (const g in grupos) h += `<h2>${esc(g)}</h2>` + grupos[g].map(tarjeta).join("");
+  if (med.length) h += `<h2>Ya decidiste, la terminal los está tomando (${med.length})</h2>` + med.map(corta).join("");
+  if (fin.length) h += `<details class="fin"><summary>Enviados o tirados (${fin.length})</summary>` + fin.map(corta).join("") + `</details>`;
   $("#main").innerHTML = h + decir();
   guardado.forEach(([id, v]) => { const x = document.querySelector(`textarea[data-id="${CSS.escape(id)}"]`); if (x) { x.value = v; x.closest(".cam").hidden = false; } });
 }
@@ -141,6 +150,15 @@ function tarjeta(c) {
   else if (l) pie = `<div class="st ok">${({ aprobar: "Aprobado", cambiar: "Cambio pedido", tirar: "Tirado" })[l.d]} ${esc(l.h)}. La terminal lo toma.</div>`;
   else pie = `<div class="st ${e === "tirado" ? "no" : "ok"}">${esc(c.nota_estado || e)}</div>`;
   return `<div class="c ${c.urgente && e === "esperando" ? "urg" : ""}"><h3>${esc(c.titulo)}</h3><dl><dt>Dónde</dt><dd>${esc(c.donde)}</dd><dt>Ticket</dt><dd>${esc(c.ticket)}</dd><dt>Por qué</dt><dd>${esc(c.por_que)}</dd><dt>Cuándo</dt><dd>${esc(c.cuando)}</dd></dl><pre>${esc(c.texto)}</pre>${pr}${pie}</div>`;
+}
+function corta(c) {
+  const e = estado(cur, c), l = local[clave(cur, c)];
+  let st;
+  if (e === "guardando") st = `<span class="st w">Guardando tu clic…</span>`;
+  else if (e === "fallo") st = `<span class="st no">No se guardó: ${esc(l.m)}</span> <button data-a="reintentar" data-id="${esc(c.id)}">Reintentar</button>`;
+  else if (l) st = `<span class="st ok">${({ aprobar: "Aprobado", cambiar: "Cambio pedido", tirar: "Tirado" })[l.d]} ${esc(l.h)}. La terminal lo toma.</span>`;
+  else st = `<span class="st ${e === "tirado" ? "no" : "ok"}">${esc(c.nota_estado || e)}</span>`;
+  return `<div class="c k"><div class="kt"><b>${esc(c.titulo)}</b><span>${esc(c.para || "")} · sale: ${esc(c.cuando || "")}</span></div><div>${st}</div><details><summary>Ver el texto</summary><pre>${esc(c.texto)}</pre></details></div>`;
 }
 const decir = () => `<div class="say"><h2>Decirle algo a la terminal de ${esc(cur)}</h2><textarea rows="2" id="msg" placeholder="Lo que escribas aquí le llega a la terminal"></textarea><div class="b"><button id="enviarmsg">Mandar</button></div><div class="st ok" id="msgok"></div></div>`;
 
