@@ -94,7 +94,8 @@ const DEMO_DATA = {
   techcow: { tarjetas: [
     { id: "d1", v: 1, para: "Persona A", titulo: "Nota de ejemplo", donde: "monday · item de ejemplo · nota nueva", ticket: "Item de ejemplo", por_que: "Pidió el cambio el lunes", cuando: "Hoy 2:00 PM", texto: "Hi A, the card now shows the total by month.\nThe link is in the item.", pruebas: [["the card now shows the total by month", "Leído en vivo 11:02 AM: 12 de 12 meses"]], urgente: true, estado: "esperando" },
     { id: "d2", v: 1, para: "Persona A", titulo: "Slack de ejemplo", donde: "Slack · canal de ejemplo · hilo", ticket: "Item de ejemplo", por_que: "Cierre del mismo ticket", cuando: "Hoy 2:10 PM", texto: "All done on this one.", pruebas: [], estado: "esperando" },
-    { id: "d3", v: 2, para: "Persona B", titulo: "Correo de ejemplo", donde: "Outlook · responder a todos", ticket: "Otro item", por_que: "Preguntó ayer", cuando: "Mañana 9:00 AM", texto: "Hi B,\n\nThe report is attached.\n\nThanks,", pruebas: [], estado: "enviado", nota_estado: "Enviado 10:41 AM y leído de vuelta" }
+    { id: "d3", v: 2, para: "Persona B", titulo: "Correo de ejemplo", donde: "Outlook · responder a todos", ticket: "Otro item", por_que: "Preguntó ayer", cuando: "Mañana 9:00 AM", texto: "Hi B,\n\nThe report is attached.\n\nThanks,", pruebas: [], estado: "enviado", nota_estado: "Enviado 10:41 AM y leído de vuelta" },
+    { id: "d4", v: 1, para: "Persona B", titulo: "Nota programada de ejemplo", donde: "monday", ticket: "Otro item", por_que: "Cierre", cuando: "Hoy 5:06 PM", texto: "Done.", pruebas: [], estado: "enviado", nota_estado: "Scheduled 8:53 AM for 5:06 PM CST" }
   ] },
   cafortune: { tarjetas: [] }, clienttether: { tarjetas: [] }
 };
@@ -135,7 +136,11 @@ function pintar() {
   if (urg.length) h += `<h2 class="urg">Urgente</h2>` + urg.map(tarjeta).join("");
   for (const g in grupos) h += `<h2>${esc(g)}</h2>` + grupos[g].map(tarjeta).join("");
   if (med.length) h += `<h2>Ya decidiste, la terminal los está tomando (${med.length})</h2>` + med.map(corta).join("");
-  if (fin.length) h += `<details class="fin"><summary>Enviados o tirados (${fin.length})</summary>` + fin.map(corta).join("") + `</details>`;
+  // "enviado" con una nota que empieza con Scheduled quiere decir programado: todavía no salió.
+  const esProg = c => c.estado === "enviado" && /^\s*(scheduled|programad)/i.test(c.nota_estado || "");
+  const prog = fin.filter(esProg), idos = fin.filter(c => !esProg(c));
+  if (prog.length) h += `<h2>Programados, salen solos a su hora (${prog.length})</h2>` + prog.map(corta).join("");
+  if (idos.length) h += `<details class="fin"><summary>Enviados o tirados (${idos.length})</summary>` + idos.map(corta).join("") + `</details>`;
   $("#main").innerHTML = h + decir();
   guardado.forEach(([id, v]) => { const x = document.querySelector(`textarea[data-id="${CSS.escape(id)}"]`); if (x) { x.value = v; x.closest(".cam").hidden = false; } });
 }
